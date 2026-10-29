@@ -1,5 +1,3 @@
-
-
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -15,22 +13,15 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { loginUser, registerUser } from "../../services/auth";
-
-const COLORS = {
-  background: "#050F1D",
-  panel: "#0B1B2B",
-  cyan: "#08A9E8",
-  white: "#F4F8FC",
-  muted: "#94A9BE",
-  border: "#18334A",
-};
+import { loginUser, registerUser } from "../services/auth";
+import { useTheme } from "../context/ThemeContext";
+import { fonts, palette } from "../theme";
 
 type AuthMode = "choice" | "login" | "register";
 
 export default function AuthScreen() {
   const router = useRouter();
-
+  const { colors } = useTheme();
   const [mode, setMode] = useState<AuthMode>("choice");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -39,401 +30,273 @@ export default function AuthScreen() {
 
   async function handleSubmit() {
     if (!email.trim() || !password) {
-      Alert.alert(
-        "Missing information",
-        "Please enter your email and password."
-      );
-      return;
+      return Alert.alert("Missing information", "Enter your email and password.");
     }
-
     if (mode === "register" && !name.trim()) {
-      Alert.alert("Missing information", "Please enter your name.");
-      return;
+      return Alert.alert("Missing information", "Enter your name.");
     }
-
-    if (mode === "register" && password.length < 6) {
-      Alert.alert(
-        "Password too short",
-        "Your password must have at least 6 characters."
-      );
-      return;
-    }
-
     try {
       setLoading(true);
-
-      if (mode === "register") {
-        await registerUser(name.trim(), email.trim(), password);
-      } else if (mode === "login") {
-        await loginUser(email.trim(), password);
-      } else {
-        return;
-      }
-
-      router.replace("/book");
+      if (mode === "register") await registerUser(name, email, password);
+      else if (mode === "login") await loginUser(email, password);
+      else return;
+      router.replace("/(tabs)/book");
     } catch (error: any) {
-      let message = "Something went wrong. Please try again.";
-
+      let message = error?.message || "Something went wrong. Please try again.";
       if (error?.code === "auth/email-already-in-use") {
-        message = "This email is already registered. Please sign in instead.";
+        message = "This email is already registered. Please sign in.";
       } else if (error?.code === "auth/invalid-email") {
         message = "Please enter a valid email address.";
       } else if (
-        error?.code === "auth/invalid-credential" ||
-        error?.code === "auth/wrong-password" ||
-        error?.code === "auth/user-not-found"
+        ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(error?.code)
       ) {
         message = "Your email or password is incorrect.";
-      } else if (error?.code === "auth/network-request-failed") {
-        message = "Network error. Check your internet connection.";
-      } else if (error?.code === "auth/weak-password") {
-        message = "Please choose a stronger password.";
-      } else if (error?.message) {
-        message = error.message;
       }
-
       Alert.alert("Unable to continue", message);
     } finally {
       setLoading(false);
     }
   }
 
-  function goBackToChoice() {
-    setMode("choice");
-    setPassword("");
-  }
+  const s = styles(colors);
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={s.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={s.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.brand}>
-          <LinearGradient
-            colors={["#08A9E8", "#0877C9"]}
-            style={styles.logo}
-          >
-            <Text style={styles.logoLetter}>V</Text>
+        <View style={s.brand}>
+          <LinearGradient colors={[palette.brand, palette.brandDark]} style={s.logo}>
+            <Text style={s.logoLetter}>V</Text>
           </LinearGradient>
-
-          <Text style={styles.brandName}>VIGIL</Text>
-          <Text style={styles.tagline}>
-            YOUR SAFETY. OUR PRIORITY.
-          </Text>
+          <Text style={s.brandName}>VIGIL</Text>
+          <Text style={s.tagline}>YOUR SAFETY. OUR PRIORITY.</Text>
         </View>
 
-        {mode === "choice" ? (
-          <View style={styles.card}>
-            <Text style={styles.heading}>Welcome to Vigil.</Text>
-            <Text style={styles.description}>
-              Reliable security booking, whenever you need it.
-            </Text>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setMode("login")}
-              style={styles.buttonWrapper}
-            >
-              <LinearGradient
-                colors={["#08A9E8", "#0877C9"]}
-                style={styles.button}
-              >
-                <Text style={styles.buttonText}>LOG IN</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setMode("register")}
-              style={styles.secondaryButton}
-            >
-              <Text style={styles.secondaryButtonText}>
-                CREATE AN ACCOUNT
+        <View style={s.card}>
+          {mode === "choice" ? (
+            <>
+              <Text style={s.heading}>Welcome to Vigil.</Text>
+              <Text style={s.description}>
+                Reliable security booking, whenever you need it.
               </Text>
-            </TouchableOpacity>
-
-            <Text style={styles.choiceNote}>
-              Sign in or create an account to manage your bookings.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.card}>
-            <TouchableOpacity
-              onPress={goBackToChoice}
-              disabled={loading}
-              style={styles.backButton}
-            >
-              <Text style={styles.backButtonText}>‹  Back</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.heading}>
-              {mode === "login" ? "Welcome back." : "Join Vigil."}
-            </Text>
-
-            <Text style={styles.description}>
-              {mode === "login"
-                ? "Sign in to manage your security bookings."
-                : "Create an account to start booking security services."}
-            </Text>
-
-            {mode === "register" && (
-              <>
-                <Text style={styles.label}>FULL NAME</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your full name"
-                  placeholderTextColor={COLORS.muted}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                  autoComplete="name"
-                  returnKeyType="next"
-                  editable={!loading}
-                />
-              </>
-            )}
-
-            <Text style={styles.label}>EMAIL ADDRESS</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={COLORS.muted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              returnKeyType="next"
-              editable={!loading}
-            />
-
-            <Text style={styles.label}>PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              placeholderTextColor={COLORS.muted}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete={
-                mode === "register" ? "new-password" : "current-password"
-              }
-              returnKeyType="done"
-              onSubmitEditing={handleSubmit}
-              editable={!loading}
-            />
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={handleSubmit}
-              disabled={loading}
-              style={styles.buttonWrapper}
-            >
-              <LinearGradient
-                colors={["#08A9E8", "#0877C9"]}
-                style={styles.button}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.buttonText}>
-                    {mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
-                  </Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchText}>
-                {mode === "login"
-                  ? "New to Vigil?"
-                  : "Already have an account?"}
+              <TouchableOpacity onPress={() => setMode("login")} activeOpacity={0.85}>
+                <LinearGradient colors={[palette.brand, palette.brandDark]} style={s.primary}>
+                  <Text style={s.primaryText}>LOG IN</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setMode("register")} style={s.secondary}>
+                <Text style={s.secondaryText}>CREATE AN ACCOUNT</Text>
+              </TouchableOpacity>
+              <Text style={s.note}>
+                Sign in or create an account to manage your bookings.
               </Text>
-
+            </>
+          ) : (
+            <>
               <TouchableOpacity
-                disabled={loading}
                 onPress={() => {
-                  setMode(mode === "login" ? "register" : "login");
+                  setMode("choice");
                   setPassword("");
                 }}
               >
-                <Text style={styles.switchAction}>
+                <Text style={s.back}>‹  Back</Text>
+              </TouchableOpacity>
+              <Text style={s.heading}>
+                {mode === "login" ? "Welcome back." : "Join Vigil."}
+              </Text>
+              <Text style={s.description}>
+                {mode === "login"
+                  ? "Sign in to manage your security bookings."
+                  : "Create an account to start booking security services."}
+              </Text>
+
+              {mode === "register" && (
+                <>
+                  <Text style={s.label}>FULL NAME</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Enter your full name"
+                    placeholderTextColor={colors.muted}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                    editable={!loading}
+                  />
+                </>
+              )}
+
+              <Text style={s.label}>EMAIL ADDRESS</Text>
+              <TextInput
+                style={s.input}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.muted}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!loading}
+              />
+
+              <Text style={s.label}>PASSWORD</Text>
+              <TextInput
+                style={s.input}
+                placeholder="Enter your password"
+                placeholderTextColor={colors.muted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                onSubmitEditing={handleSubmit}
+                editable={!loading}
+              />
+
+              <TouchableOpacity onPress={handleSubmit} disabled={loading}>
+                <LinearGradient colors={[palette.brand, palette.brandDark]} style={s.primary}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={s.primaryText}>
+                      {mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={s.switchRow}>
+                <Text style={s.note}>
+                  {mode === "login" ? "New to Vigil?" : "Already have an account?"}
+                </Text>
+                <Text
+                  onPress={() => {
+                    setMode(mode === "login" ? "register" : "login");
+                    setPassword("");
+                  }}
+                  style={s.secondaryText}
+                >
                   {mode === "login" ? " Register" : " Sign in"}
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+              </View>
+            </>
+          )}
+        </View>
 
-        <Text style={styles.footer}>
-          SECURE ACCESS · VIGIL SECURITY SERVICES
-        </Text>
+        <Text style={s.footer}>SECURE ACCESS · VIGIL SECURITY SERVICES</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 18,
-  },
-  brand: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  logo: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  logoLetter: {
-    color: "#FFFFFF",
-    fontSize: 31,
-    fontWeight: "900",
-  },
-  brandName: {
-    color: COLORS.white,
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: 7,
-  },
-  tagline: {
-    color: COLORS.cyan,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.7,
-    marginTop: 6,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 440,
-    alignSelf: "center",
-    backgroundColor: COLORS.panel,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 19,
-    paddingVertical: 18,
-  },
-  heading: {
-    color: COLORS.white,
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  description: {
-    color: COLORS.muted,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-    marginBottom: 13,
-  },
-  backButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 4,
-    marginBottom: 9,
-  },
-  backButtonText: {
-    color: COLORS.cyan,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  label: {
-    color: COLORS.muted,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  input: {
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: COLORS.white,
-    fontSize: 13,
-    minHeight: 42,
-  },
-  buttonWrapper: {
-    marginTop: 18,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  button: {
-    minHeight: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 11,
-    letterSpacing: 1.3,
-  },
-  secondaryButton: {
-    minHeight: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.cyan,
-    marginTop: 10,
-  },
-  secondaryButtonText: {
-    color: COLORS.cyan,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.1,
-  },
-  choiceNote: {
-    color: COLORS.muted,
-    textAlign: "center",
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 17,
-  },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginTop: 16,
-  },
-  switchText: {
-    color: COLORS.muted,
-    fontSize: 11,
-  },
-  switchAction: {
-    color: COLORS.cyan,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  footer: {
-    color: "#536A80",
-    fontSize: 8,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textAlign: "center",
-    marginTop: 19,
-  },
-});
+const styles = (c: ReturnType<typeof useTheme>["colors"]) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: 24,
+      paddingVertical: 24,
+    },
+    brand: { alignItems: "center", marginBottom: 25 },
+    logo: {
+      width: 58,
+      height: 58,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 10,
+    },
+    logoLetter: { color: "#fff", fontFamily: fonts.bold, fontSize: 31 },
+    brandName: { color: c.text, fontFamily: fonts.logo, fontSize: 42, letterSpacing: 3 },
+    tagline: {
+      color: palette.brand,
+      fontFamily: fonts.bold,
+      fontSize: 9,
+      letterSpacing: 1.7,
+      marginTop: 4,
+    },
+    card: {
+      width: "100%",
+      maxWidth: 440,
+      alignSelf: "center",
+      backgroundColor: c.surface,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: 22,
+    },
+    heading: { color: c.text, fontFamily: fonts.bold, fontSize: 24 },
+    description: {
+      color: c.muted,
+      fontFamily: fonts.regular,
+      fontSize: 13,
+      lineHeight: 21,
+      marginTop: 7,
+      marginBottom: 16,
+    },
+    primary: {
+      minHeight: 50,
+      borderRadius: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 10,
+    },
+    primaryText: { color: "#fff", fontFamily: fonts.bold, fontSize: 12, letterSpacing: 1.2 },
+    secondary: {
+      minHeight: 50,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor: palette.brand,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 12,
+    },
+    secondaryText: { color: palette.brand, fontFamily: fonts.bold, fontSize: 11 },
+    note: {
+      color: c.muted,
+      fontFamily: fonts.regular,
+      fontSize: 11,
+      textAlign: "center",
+      marginTop: 16,
+    },
+    back: { color: palette.brand, fontFamily: fonts.semibold, marginBottom: 14 },
+    label: {
+      color: c.muted,
+      fontFamily: fonts.bold,
+      fontSize: 10,
+      letterSpacing: 1,
+      marginTop: 12,
+      marginBottom: 7,
+    },
+    input: {
+      backgroundColor: c.input,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
+      color: c.text,
+      fontFamily: fonts.regular,
+      minHeight: 48,
+    },
+    switchRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      flexWrap: "wrap",
+    },
+    footer: {
+      color: c.muted,
+      opacity: 0.8,
+      fontFamily: fonts.medium,
+      fontSize: 8,
+      letterSpacing: 1,
+      textAlign: "center",
+      marginTop: 22,
+    },
+  });

@@ -1,5 +1,4 @@
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,514 +9,339 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-
-import { logoutUser } from "../../../services/auth";
-import {
-  SecurityBooking,
-  subscribeToBookings,
-} from "../../../services/bookings";
-import NewBookingForm from "../../../components/newbooking";
-
-const COLORS = {
-  background: "#050F1D",
-  panel: "#0B1B2B",
-  cyan: "#08A9E8",
-  blue: "#0577B5",
-  white: "#F4F8FC",
-  muted: "#647A93",
-  border: "#18334A",
-  green: "#55D6A2",
-};
+import { useRouter } from "expo-router";
+import { logoutUser } from "../../services/auth";
+import { SecurityBooking, subscribeToBookings } from "../../services/bookings";
+import NewBookingForm from "../../components/newbooking";
+import { useTheme } from "../../context/ThemeContext";
+import { fonts, palette } from "../../theme";
 
 export default function BookScreen() {
+  const { colors } = useTheme();
+  const router = useRouter();
   const [bookings, setBookings] = useState<SecurityBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showNew, setShowNew] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [showNewBooking, setShowNewBooking] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeToBookings(
-      (updatedBookings) => {
-        setBookings(updatedBookings);
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Failed to load bookings:", error);
-        setLoading(false);
-        Alert.alert(
-          "Unable to load bookings",
-          "Please check your connection and try again."
-        );
-      }
-    );
-
-    return unsubscribe;
+    try {
+      return subscribeToBookings(
+        setBookings,
+        (e) => {
+          console.error(e);
+          setLoading(false);
+          Alert.alert(
+            "Unable to load bookings",
+            "Please check your connection and try again."
+          );
+        }
+      );
+    } catch (e) {
+      setLoading(false);
+      Alert.alert("Please sign in", "Your session may have expired.", [
+        { text: "OK", onPress: () => router.replace("/") },
+      ]);
+    }
   }, []);
 
-  const handleLogout = async () => {
-    if (loggingOut) return;
+  useEffect(() => {
+    if (bookings.length >= 0) setLoading(false);
+  }, [bookings]);
 
-    setLoggingOut(true);
+  const now = new Date();
+  const upcoming = useMemo(
+    () =>
+      bookings
+        .filter((b) => new Date(`${b.date}T${b.startTime}`) >= now)
+        .sort(
+          (a, b) =>
+            a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
+        ),
+    [bookings]
+  );
+  const past = useMemo(
+    () =>
+      bookings
+        .filter((b) => new Date(`${b.date}T${b.startTime}`) < now)
+        .sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)
+        ),
+    [bookings]
+  );
+  const s = styles(colors);
 
-    try {
-      await logoutUser();
-      const { router } = await import("expo-router");
-      router.replace("/");
-    } catch (error) {
-      console.error("Logout failed:", error);
-      Alert.alert("Logout failed", "Please try again.");
-      setLoggingOut(false);
-    }
-  };
-
-  const upcomingBookings = bookings
-    .filter((booking) => {
-      const date = new Date(`${booking.date}T${booking.startTime}`);
-      return date >= new Date();
-    })
-    .sort((a, b) => {
-      const dateA = new Date(`${a.date}T${a.startTime}`).getTime();
-      const dateB = new Date(`${b.date}T${b.startTime}`).getTime();
-      return dateA - dateB;
-    });
-
-  const pastBookings = bookings
-    .filter((booking) => {
-      const date = new Date(`${booking.date}T${booking.startTime}`);
-      return date < new Date();
-    })
-    .sort((a, b) => {
-      const dateA = new Date(`${a.date}T${a.startTime}`).getTime();
-      const dateB = new Date(`${b.date}T${b.startTime}`).getTime();
-      return dateB - dateA;
-    });
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(`${dateString}T00:00:00`);
-
-    return date.toLocaleDateString("en-CA", {
+  const formatDate = (d: string) =>
+    new Date(`${d}T12:00:00`).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
       year: "numeric",
     });
+
+  const formatTime = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   };
 
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(":").map(Number);
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
+  const statusStyle = (status: string) =>
+    status === "Confirmed"
+      ? { bg: "#DDF7EC", fg: "#147A58" }
+      : status === "Declined"
+        ? { bg: "#FCE6E7", fg: "#B42E3A" }
+        : { bg: "#FFF0D5", fg: "#96600C" };
 
-    return date.toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const renderBooking = ({
-    item,
-  }: {
-    item: SecurityBooking;
-  }) => {
-    const isUpcoming =
-      new Date(`${item.date}T${item.startTime}`) >= new Date();
+  const renderBooking = ({ item }: { item: SecurityBooking }) => {
+    const status = statusStyle(item.status || "Pending");
 
     return (
-      <View style={styles.bookingCard}>
-        <View style={styles.bookingTopRow}>
-          <View>
-            <Text style={styles.bookingDate}>
-              {formatDate(item.date)}
-            </Text>
-            <Text style={styles.bookingTime}>
+      <View style={s.bookingCard}>
+        <View style={s.bookingTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.bookingDate}>{formatDate(item.date)}</Text>
+            <Text style={s.bookingTime}>
               {formatTime(item.startTime)} – {formatTime(item.endTime)}
             </Text>
           </View>
-
-          <View
-            style={[
-              styles.statusBadge,
-              {
-                backgroundColor: isUpcoming
-                  ? "rgba(85, 214, 162, 0.12)"
-                  : "rgba(100, 122, 147, 0.15)",
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.statusText,
-                { color: isUpcoming ? COLORS.green : COLORS.muted },
-              ]}
-            >
-              {isUpcoming ? "UPCOMING" : "COMPLETED"}
+          <View style={[s.badge, { backgroundColor: status.bg }]}>
+            <Text style={[s.badgeText, { color: status.fg }]}>
+              {(item.status || "Pending").toUpperCase()}
             </Text>
           </View>
         </View>
-
-        <View style={styles.bookingDivider} />
-
-        <Text style={styles.detailLabel}>LOCATION</Text>
-        <Text style={styles.detailValue}>{item.address}</Text>
-
-        <View style={styles.bookingInfoRow}>
-          <View style={styles.bookingInfoItem}>
-            <Text style={styles.detailLabel}>GUARDS</Text>
-            <Text style={styles.detailValue}>
-              {item.guards}
-            </Text>
+        <View style={s.divider} />
+        <Text style={s.label}>LOCATION</Text>
+        <Text style={s.value}>{item.address}</Text>
+        <View style={{ flexDirection: "row", gap: 25 }}>
+          <View>
+            <Text style={s.label}>GUARDS</Text>
+            <Text style={s.value}>{item.guardsNeeded || item.guards}</Text>
+          </View>
+          <View>
+            <Text style={s.label}>REQUEST STATUS</Text>
+            <Text style={s.value}>{item.status || "Pending"}</Text>
           </View>
         </View>
-
-        {item.details ? (
+        {!!item.details && (
           <>
-            <Text style={styles.detailLabel}>SERVICE DETAILS</Text>
-            <Text style={styles.detailValue}>{item.details}</Text>
+            <Text style={s.label}>SERVICE DETAILS</Text>
+            <Text style={s.value}>{item.details}</Text>
           </>
-        ) : null}
-
-        {item.instructions ? (
+        )}
+        {!!item.instructions && (
           <>
-            <Text style={styles.detailLabel}>SPECIAL INSTRUCTIONS</Text>
-            <Text style={styles.detailValue}>{item.instructions}</Text>
+            <Text style={s.label}>SPECIAL INSTRUCTIONS</Text>
+            <Text style={s.value}>{item.instructions}</Text>
           </>
-        ) : null}
+        )}
       </View>
     );
   };
 
-  if (showNewBooking) {
+  if (showNew)
     return (
       <NewBookingForm
-        onCancel={() => setShowNewBooking(false)}
-        onSuccess={() => setShowNewBooking(false)}
+        onCancel={() => setShowNew(false)}
+        onSuccess={() => setShowNew(false)}
       />
     );
-  }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={["#0B2034", COLORS.background]}
-        style={styles.header}
-      >
+    <View style={s.container}>
+      <LinearGradient colors={[colors.surfaceElevated, colors.background]} style={s.header}>
         <View>
-          <Text style={styles.logo}>VIGIL</Text>
-          <Text style={styles.headerSubtitle}>
-            SECURITY SERVICES
-          </Text>
+          <Text style={s.logo}>VIGIL</Text>
+          <Text style={s.headerSubtitle}>SECURITY SERVICES</Text>
         </View>
-
         <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={handleLogout}
+          style={s.logout}
           disabled={loggingOut}
+          onPress={async () => {
+            try {
+              setLoggingOut(true);
+              await logoutUser();
+              router.replace("/");
+            } catch {
+              setLoggingOut(false);
+              Alert.alert("Logout failed", "Please try again.");
+            }
+          }}
         >
-          {loggingOut ? (
-            <ActivityIndicator color={COLORS.white} size="small" />
-          ) : (
-            <Text style={styles.logoutText}>LOG OUT</Text>
-          )}
+          <Text style={s.logoutText}>{loggingOut ? "..." : "LOG OUT"}</Text>
         </TouchableOpacity>
       </LinearGradient>
 
       <FlatList
-        data={upcomingBookings}
-        keyExtractor={(item) => item.id}
+        data={upcoming}
+        keyExtractor={(i) => i.id}
         renderItem={renderBooking}
+        contentContainerStyle={s.list}
+        showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <View>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.pageTitle}>Your bookings</Text>
-                <Text style={styles.pageSubtitle}>
-                  Your security, scheduled.
-                </Text>
-              </View>
+          <>
+            <View style={s.pageHeading}>
+              <Text style={s.pageTitle}>Your bookings</Text>
+              <Text style={s.pageSubtitle}>Your security, scheduled.</Text>
             </View>
-
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowNewBooking(true)}
-            >
+            <TouchableOpacity onPress={() => setShowNew(true)} activeOpacity={0.85}>
               <LinearGradient
-                colors={[COLORS.cyan, COLORS.blue]}
-                style={styles.newBookingButton}
+                colors={[palette.brand, palette.brandDark]}
+                style={s.newButton}
               >
-                <Text style={styles.newBookingPlus}>＋</Text>
-                <View style={styles.newBookingButtonTextContainer}>
-                  <Text style={styles.newBookingButtonTitle}>
-                    BOOK A SECURITY SERVICE
-                  </Text>
-                  <Text style={styles.newBookingButtonSubtitle}>
-                    Schedule a new booking
-                  </Text>
+                <Text style={s.plus}>＋</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.newTitle}>BOOK A SECURITY SERVICE</Text>
+                  <Text style={s.newSub}>Schedule a new booking request</Text>
                 </View>
+                <Text style={s.arrow}>›</Text>
               </LinearGradient>
             </TouchableOpacity>
-
-            <View style={styles.listSectionHeader}>
-              <Text style={styles.sectionTitle}>UPCOMING BOOKINGS</Text>
-              <Text style={styles.countText}>
-                {upcomingBookings.length}
-              </Text>
+            <View style={s.sectionRow}>
+              <Text style={s.sectionTitle}>UPCOMING BOOKINGS</Text>
+              <Text style={s.count}>{upcoming.length}</Text>
             </View>
-
             {loading ? (
-              <ActivityIndicator
-                color={COLORS.cyan}
-                size="large"
-                style={styles.loader}
-              />
-            ) : upcomingBookings.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateIcon}>◷</Text>
-                <Text style={styles.emptyStateTitle}>
-                  Nothing scheduled yet
-                </Text>
-                <Text style={styles.emptyStateText}>
-                  Your upcoming security bookings will appear here.
+              <ActivityIndicator color={palette.brand} size="large" style={{ margin: 30 }} />
+            ) : upcoming.length === 0 ? (
+              <View style={s.empty}>
+                <Text style={s.emptyIcon}>◷</Text>
+                <Text style={s.emptyTitle}>Nothing scheduled yet</Text>
+                <Text style={s.emptyText}>
+                  Your new booking requests will appear here.
                 </Text>
               </View>
             ) : null}
-          </View>
+          </>
         }
-        ListEmptyComponent={loading ? null : <View />}
         ListFooterComponent={
-          <View>
-            <View style={styles.listSectionHeader}>
-              <Text style={styles.sectionTitle}>PAST BOOKINGS</Text>
-              <Text style={styles.countText}>{pastBookings.length}</Text>
+          <>
+            <View style={s.sectionRow}>
+              <Text style={s.sectionTitle}>PAST BOOKINGS</Text>
+              <Text style={s.count}>{past.length}</Text>
             </View>
-
-            {loading ? null : pastBookings.length === 0 ? (
-              <Text style={styles.noPastBookings}>
-                No past bookings to show.
-              </Text>
+            {past.length ? (
+              past.map((b) => <View key={b.id}>{renderBooking({ item: b })}</View>)
             ) : (
-              pastBookings.map((booking) => (
-                <View key={booking.id}>
-                  {renderBooking({ item: booking })}
-                </View>
-              ))
+              <Text style={s.emptyPast}>No past bookings to show.</Text>
             )}
-
-            <Text style={styles.footerText}>
-              VIGIL  ·  YOUR SAFETY, OUR PRIORITY
-            </Text>
-          </View>
+            <Text style={s.footer}>VIGIL · YOUR SAFETY, OUR PRIORITY</Text>
+          </>
         }
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    paddingTop: 58,
-    paddingBottom: 22,
-    paddingHorizontal: 24,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  logo: {
-    color: COLORS.white,
-    fontSize: 27,
-    fontWeight: "900",
-    letterSpacing: 5,
-  },
-  headerSubtitle: {
-    color: COLORS.muted,
-    fontSize: 9,
-    letterSpacing: 2.5,
-    marginTop: 4,
-  },
-  logoutButton: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minWidth: 76,
-    alignItems: "center",
-  },
-  logoutText: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  listContent: {
-    paddingHorizontal: 22,
-    paddingBottom: 32,
-  },
-  sectionHeader: {
-    marginTop: 28,
-    marginBottom: 22,
-  },
-  pageTitle: {
-    color: COLORS.white,
-    fontSize: 28,
-    fontWeight: "800",
-  },
-  pageSubtitle: {
-    color: COLORS.muted,
-    fontSize: 13,
-    marginTop: 7,
-  },
-  newBookingButton: {
-    minHeight: 76,
-    borderRadius: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  newBookingPlus: {
-    color: COLORS.white,
-    fontSize: 29,
-    marginRight: 15,
-  },
-  newBookingButtonTextContainer: {
-    flex: 1,
-  },
-  newBookingButtonTitle: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  newBookingButtonSubtitle: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    marginTop: 5,
-  },
-  listSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 15,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    color: COLORS.muted,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.8,
-  },
-  countText: {
-    color: COLORS.cyan,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  loader: {
-    marginVertical: 40,
-  },
-  emptyState: {
-    backgroundColor: COLORS.panel,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 22,
-    paddingVertical: 30,
-    alignItems: "center",
-    marginBottom: 28,
-  },
-  emptyStateIcon: {
-    color: COLORS.cyan,
-    fontSize: 35,
-    marginBottom: 12,
-  },
-  emptyStateTitle: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  emptyStateText: {
-    color: COLORS.muted,
-    fontSize: 12,
-    lineHeight: 19,
-    textAlign: "center",
-    marginTop: 8,
-  },
-  bookingCard: {
-    backgroundColor: COLORS.panel,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 18,
-    marginBottom: 14,
-  },
-  bookingTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  bookingDate: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  bookingTime: {
-    color: COLORS.cyan,
-    fontSize: 12,
-    marginTop: 6,
-  },
-  statusBadge: {
-    borderRadius: 7,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
-  statusText: {
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.7,
-  },
-  bookingDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: 16,
-  },
-  detailLabel: {
-    color: COLORS.muted,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.4,
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  detailValue: {
-    color: COLORS.white,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  bookingInfoRow: {
-    flexDirection: "row",
-    marginTop: 8,
-  },
-  bookingInfoItem: {
-    flex: 1,
-  },
-  noPastBookings: {
-    color: COLORS.muted,
-    fontSize: 12,
-    marginBottom: 25,
-  },
-  footerText: {
-    color: COLORS.muted,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    textAlign: "center",
-    marginTop: 25,
-  },
-});
+const styles = (c: ReturnType<typeof useTheme>["colors"]) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    header: {
+      paddingTop: 52,
+      paddingBottom: 18,
+      paddingHorizontal: 22,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    logo: { color: c.text, fontFamily: fonts.logo, fontSize: 35, letterSpacing: 2 },
+    headerSubtitle: { color: c.muted, fontFamily: fonts.medium, fontSize: 8, letterSpacing: 2 },
+    logout: {
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 10,
+      paddingVertical: 9,
+      paddingHorizontal: 12,
+    },
+    logoutText: { color: c.text, fontFamily: fonts.bold, fontSize: 9, letterSpacing: 0.8 },
+    list: { paddingHorizontal: 20, paddingBottom: 30 },
+    pageHeading: { marginTop: 24, marginBottom: 18 },
+    pageTitle: { color: c.text, fontFamily: fonts.bold, fontSize: 28 },
+    pageSubtitle: { color: c.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: 5 },
+    newButton: {
+      minHeight: 78,
+      borderRadius: 16,
+      paddingHorizontal: 17,
+      paddingVertical: 15,
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 28,
+    },
+    plus: { color: "#fff", fontSize: 28, marginRight: 14 },
+    newTitle: { color: "#fff", fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.6 },
+    newSub: {
+      color: "rgba(255,255,255,0.82)",
+      fontFamily: fonts.regular,
+      fontSize: 10,
+      marginTop: 5,
+    },
+    arrow: { color: "#fff", fontSize: 28, marginLeft: 8 },
+    sectionRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 13,
+      marginTop: 3,
+    },
+    sectionTitle: { color: c.muted, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 1.1 },
+    count: { color: palette.brand, fontFamily: fonts.bold, fontSize: 12 },
+    empty: {
+      backgroundColor: c.surface,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: 26,
+      alignItems: "center",
+      marginBottom: 25,
+    },
+    emptyIcon: { color: palette.brand, fontSize: 32, marginBottom: 10 },
+    emptyTitle: { color: c.text, fontFamily: fonts.semibold, fontSize: 14 },
+    emptyText: {
+      color: c.muted,
+      fontFamily: fonts.regular,
+      fontSize: 11,
+      lineHeight: 18,
+      textAlign: "center",
+      marginTop: 7,
+    },
+    bookingCard: {
+      backgroundColor: c.surface,
+      borderRadius: 17,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: 16,
+      marginBottom: 13,
+    },
+    bookingTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+    bookingDate: { color: c.text, fontFamily: fonts.bold, fontSize: 14 },
+    bookingTime: { color: palette.brand, fontFamily: fonts.medium, fontSize: 11, marginTop: 5 },
+    badge: { borderRadius: 7, paddingHorizontal: 9, paddingVertical: 6 },
+    badgeText: { fontFamily: fonts.bold, fontSize: 8, letterSpacing: 0.5 },
+    divider: { height: 1, backgroundColor: c.border, marginVertical: 14 },
+    label: {
+      color: c.muted,
+      fontFamily: fonts.bold,
+      fontSize: 9,
+      letterSpacing: 1,
+      marginTop: 9,
+      marginBottom: 4,
+    },
+    value: { color: c.text, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18 },
+    emptyPast: { color: c.muted, fontFamily: fonts.regular, fontSize: 11, marginBottom: 20 },
+    footer: {
+      color: c.muted,
+      fontFamily: fonts.medium,
+      fontSize: 8,
+      letterSpacing: 1,
+      textAlign: "center",
+      marginTop: 24,
+    },
+  });
