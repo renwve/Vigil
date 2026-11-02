@@ -88,8 +88,15 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-
 const styles = StyleSheet.create({
-  tabBar: { borderTopWidth: 1, height: 76, paddingTop: 8, paddingBottom: 10 },
-  tabLabel: { fontFamily: fonts.semibold, fontSize: 10 },
+  tabBar: {
+    borderTopWidth: 1,
+    height: 88,
+    paddingTop: 10,
+    paddingBottom: 16,
+  },
+  tabLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 10,
+  },
 });
